@@ -20,6 +20,14 @@ warn()    { echo -e "${YELLOW}[!]${RESET} $*"; }
 error()   { echo -e "${RED}[✘]${RESET} $*" >&2; exit 1; }
 section() { echo -e "\n${CYAN}▶ $*${RESET}"; }
 
+# Returns 0 if the GitHub repo owner/name is publicly accessible, 1 otherwise.
+github_repo_exists() {
+    local owner="$1" repo="$2" status
+    status=$(curl -s -o /dev/null -w "%{http_code}" \
+        "https://api.github.com/repos/${owner}/${repo}" 2>/dev/null) || true
+    [ "$status" = "200" ]
+}
+
 prompt_yn() {
     # prompt_yn "Question" "default(y|n)" VAR_NAME
     local question="$1" default="$2" varname="$3"
@@ -171,7 +179,41 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-# 3. Summary + confirmation
+# 3. Resolve GitHub repositories
+# ─────────────────────────────────────────────────────────────
+section "Resolving GitHub repositories"
+
+# ── NeoPZ: afbrbza → labmec ──────────────────────────────────
+NEOPZ_REPO=""
+for _owner in afbrbza labmec; do
+    if github_repo_exists "$_owner" "neopz"; then
+        NEOPZ_REPO="https://github.com/${_owner}/neopz.git"
+        info "NeoPZ repository  : ${NEOPZ_REPO}"
+        break
+    else
+        warn "Not found: ${_owner}/neopz"
+    fi
+done
+[ -z "$NEOPZ_REPO" ] && error "NeoPZ repository not found in afbrbza/neopz or labmec/neopz."
+
+# ── MUMPS: afbrbza → labmec → giavancini → scivision fallback ─
+MUMPS_REPO=""
+for _owner in afbrbza labmec giavancini; do
+    if github_repo_exists "$_owner" "mumps"; then
+        MUMPS_REPO="https://github.com/${_owner}/mumps.git"
+        info "MUMPS repository  : ${MUMPS_REPO}"
+        break
+    else
+        warn "Not found: ${_owner}/mumps"
+    fi
+done
+if [ -z "$MUMPS_REPO" ]; then
+    MUMPS_REPO="https://github.com/scivision/mumps-superbuild.git"
+    warn "MUMPS repository (fallback): ${MUMPS_REPO}"
+fi
+
+# ─────────────────────────────────────────────────────────────
+# 4. Summary + confirmation
 # ─────────────────────────────────────────────────────────────
 flag_label() { [ "$1" = "1" ] && echo -e "${GREEN}ON${RESET}" || echo -e "${YELLOW}OFF${RESET}"; }
 echo ""
@@ -187,6 +229,8 @@ echo "    MUMPS_BUILD_COMPLEX16 : $(flag_label $MUMPS_BUILD_COMPLEX16)"
 fi
 echo "  USING_MKL           : $(flag_label $USING_MKL)"
 echo "  USING_METIS         : $(flag_label $USING_METIS)"
+echo "  NEOPZ_REPO          : ${NEOPZ_REPO}"
+echo "  MUMPS_REPO          : ${MUMPS_REPO}"
 echo "─────────────────────────────────────────────"
 echo ""
 printf "  Proceed with build? (Y/n): "
@@ -195,13 +239,13 @@ confirm="${confirm:-y}"
 case "$confirm" in y|Y) ;; *) echo "Aborted."; exit 0 ;; esac
 
 # ─────────────────────────────────────────────────────────────
-# 4. Build
+# 5. Build
 # ─────────────────────────────────────────────────────────────
 echo ""
 echo "Building image '${IMAGE_NAME}'..."
 echo ""
 
-$DOCKER_CMD build \
+$DOCKER_CMD build --no-cache \
     --build-arg BUILD_TYPE="$BUILD_TYPE" \
     --build-arg BUILD_UNITTESTING="$BUILD_UNITTESTING" \
     --build-arg USING_LOG4CXX="$USING_LOG4CXX" \
@@ -211,6 +255,8 @@ $DOCKER_CMD build \
     --build-arg MUMPS_BUILD_SINGLE="$MUMPS_BUILD_SINGLE" \
     --build-arg MUMPS_BUILD_COMPLEX="$MUMPS_BUILD_COMPLEX" \
     --build-arg MUMPS_BUILD_COMPLEX16="$MUMPS_BUILD_COMPLEX16" \
+    --build-arg NEOPZ_REPO="$NEOPZ_REPO" \
+    --build-arg MUMPS_REPO="$MUMPS_REPO" \
     -t "$IMAGE_NAME" \
     -f "${SCRIPT_DIR}/Dockerfile" \
     "${SCRIPT_DIR}"

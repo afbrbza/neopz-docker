@@ -17,8 +17,10 @@ warn()    { echo -e "${YELLOW}[!]${RESET} $*"; }
 section() { echo -e "\n${CYAN}▶ $*${RESET}"; }
 
 section "NeoPZ Docker development environment"
+# This directory will be mounted as the projects volume inside the container.
 PROJECTS_DIR="$HOME/programming"
-printf "  Projects directory (default: %s): " "$PROJECTS_DIR"
+printf "  Projects volume – host directory to mount into the container\n"
+printf "  (default: %s): " "$PROJECTS_DIR"
 read -r PROJECTS_DIR
 PROJECTS_DIR="${PROJECTS_DIR:-$HOME/programming}"
 
@@ -289,25 +291,41 @@ EOF
     fi
 fi
 
+
 # ─────────────────────────────────────────────────────────────
 # 5. Start container (detached)
 # ─────────────────────────────────────────────────────────────
-if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' \
-        | grep -q "^${CONTAINER_NAME}$"; then
-    warn "Container '${CONTAINER_NAME}' is already running."
-else
-    # Remove any stopped container with the same name
+_start_container() {
     docker rm -f "$CONTAINER_NAME" &>/dev/null 2>&1 || true
-
-    # CMD is overridden with 'sleep infinity' to keep the container alive
-    # without a terminal. Use 'docker exec' below to get an interactive shell.
     docker run -d --rm \
         --name "$CONTAINER_NAME" \
         -v "${PROJECTS_DIR}":${WORKDIR_IN_CONTAINER} \
         "$IMAGE_NAME" \
         sleep infinity
+    info "Container '${CONTAINER_NAME}' started with volume: ${PROJECTS_DIR}"
+}
 
-    info "Container '${CONTAINER_NAME}' started."
+if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' \
+        | grep -q "^${CONTAINER_NAME}$"; then
+    CURRENT_VOLUME=$(docker inspect "$CONTAINER_NAME" \
+        --format '{{range .Mounts}}{{if eq .Destination "'"${WORKDIR_IN_CONTAINER}"'"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
+    if [ "$CURRENT_VOLUME" != "$PROJECTS_DIR" ]; then
+        warn "Container running with a different volume:"
+        warn "  current  : ${CURRENT_VOLUME}"
+        warn "  requested: ${PROJECTS_DIR}"
+        warn "Restarting container with the correct volume..."
+        docker stop "$CONTAINER_NAME" &>/dev/null 2>&1 || true
+        # Wait for --rm to fully remove the container before restarting
+        _i=0
+        while docker inspect "$CONTAINER_NAME" &>/dev/null 2>&1 && [ "$_i" -lt 15 ]; do
+            sleep 1; _i=$((_i + 1))
+        done
+        _start_container
+    else
+        warn "Container '${CONTAINER_NAME}' is already running."
+    fi
+else
+    _start_container
 fi
 
 # ─────────────────────────────────────────────────────────────
@@ -326,30 +344,20 @@ echo ""
 # 7. Open VSCode attached to the running container
 # ─────────────────────────────────────────────────────────────
 section "VSCode"
-if command -v code &>/dev/null; then
-    # Build the attached-container authority (hex-encoded JSON)
-    CONTAINER_HEX=$(printf '%s' "{\"containerName\":\"/${CONTAINER_NAME}\"}" \
-        | od -v -A n -t x1 | tr -d ' \n')
-
-    if [ -n "$VSCODE_OPEN_PROJECT" ]; then
-        # Open the project folder inside the container.
-        # Note: .code-workspace files cannot be opened via vscode-remote:// URI;
-        # only folders are supported. Open the workspace file manually from within VSCode if needed.
-        FULL_URI="vscode-remote://attached-container+${CONTAINER_HEX}${WORKDIR_IN_CONTAINER}/${VSCODE_OPEN_PROJECT}"
-        echo "  Opening project folder in VSCode (attached to container)..."
-        echo -e "    ${CYAN}${WORKDIR_IN_CONTAINER}/${VSCODE_OPEN_PROJECT}${RESET}"
-        code --folder-uri "$FULL_URI"
-    else
-        # No example project – open the projects folder
-        FULL_URI="vscode-remote://attached-container+${CONTAINER_HEX}${WORKDIR_IN_CONTAINER}"
-        echo "  Opening projects folder in VSCode..."
-        code --folder-uri "$FULL_URI"
-    fi
-    info "VSCode launched. Install the 'Dev Containers' extension if prompted."
-else
+if [ -z "$VSCODE_OPEN_PROJECT" ]; then
+    info "No project selected – skipping VSCode launch."
+elif ! command -v code &>/dev/null; then
     warn "VSCode (code) not found in PATH."
     echo "  Install it from https://code.visualstudio.com"
     echo "  Then re-run this script to open VSCode automatically."
+else
+    CONTAINER_HEX=$(printf '%s' "{\"containerName\":\"/${CONTAINER_NAME}\"}" \
+        | od -v -A n -t x1 | tr -d ' \n')
+    FULL_URI="vscode-remote://attached-container+${CONTAINER_HEX}${WORKDIR_IN_CONTAINER}/${VSCODE_OPEN_PROJECT}"
+    echo "  Opening project folder in VSCode (attached to container)..."
+    echo -e "    ${CYAN}${WORKDIR_IN_CONTAINER}/${VSCODE_OPEN_PROJECT}${RESET}"
+    code --folder-uri "$FULL_URI"
+    info "VSCode launched. Install the 'Dev Containers' extension if prompted."
 fi
 
 echo ""

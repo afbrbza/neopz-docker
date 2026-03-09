@@ -38,6 +38,7 @@ ARG USING_METIS=0
 ARG MUMPS_BUILD_SINGLE=0
 ARG MUMPS_BUILD_COMPLEX=0
 ARG MUMPS_BUILD_COMPLEX16=0
+ARG MUMPS_REPO=https://github.com/giavancini/mumps.git
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -48,7 +49,7 @@ RUN mkdir -p /home/labmec/programming/neopz/mumps && \
             build-essential cmake git gfortran \
             libopenblas-dev $METIS_PKG \
             && rm -rf /var/lib/apt/lists/* && \
-        git clone --depth=1 https://github.com/giavancini/mumps.git /tmp/mumps-src && \
+        git clone --depth=1 "${MUMPS_REPO}" /tmp/mumps-src && \
         METIS_FLAG="-DMUMPS_metis=off"; \
         [ "${USING_METIS}" = "1" ] && METIS_FLAG="-DMUMPS_metis=on"; \
         cmake -S /tmp/mumps-src -B /tmp/mumps-src/build \
@@ -83,6 +84,10 @@ ARG USING_LOG4CXX=1
 ARG USING_MKL=0
 ARG USING_METIS=0
 ARG USING_MUMPS=0
+ARG MUMPS_BUILD_SINGLE=0
+ARG MUMPS_BUILD_COMPLEX=0
+ARG MUMPS_BUILD_COMPLEX16=0
+ARG NEOPZ_REPO=https://github.com/labmec/neopz.git
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -103,9 +108,11 @@ RUN set -e; \
     PKGS=""; \
     [ "${USING_LOG4CXX}" = "1" ] && PKGS="$PKGS liblog4cxx-dev"; \
     [ "${USING_METIS}"   = "1" ] && PKGS="$PKGS libmetis-dev"; \
+    [ "${USING_MUMPS}"   = "1" ] && PKGS="$PKGS gfortran libopenblas-dev"; \
     if [ -n "$PKGS" ]; then \
         apt-get update && apt-get install -y $PKGS && rm -rf /var/lib/apt/lists/*; \
     fi
+
 
 # ── Intel oneAPI MKL (x86_64 only) ───────────────────────────
 RUN mkdir -p /opt/intel && \
@@ -125,14 +132,18 @@ COPY --from=builder-mumps \
 
 # ── Clone NeoPZ repository ────────────────────────────────────
 WORKDIR /home/labmec/programming/neopz
-RUN git clone --depth=1 --branch develop https://github.com/labmec/neopz.git
+RUN git clone --depth=1 --branch develop "${NEOPZ_REPO}"
 
 # ── Configure & build ─────────────────────────────────────────
 WORKDIR /home/labmec/programming/neopz/neopz
 
 RUN MKL_FLAG=""; MUMPS_FLAG=""; \
     [ "${USING_MKL}"   = "1" ] && MKL_FLAG="-DMKL_ROOT=/opt/intel/oneapi/mkl/latest"; \
-    [ "${USING_MUMPS}" = "1" ] && MUMPS_FLAG="-DMUMPS_ROOT=/home/labmec/programming/neopz/mumps"; \
+    [ "${USING_MUMPS}" = "1" ] && MUMPS_FLAG="-DMUMPS_ROOT=/home/labmec/programming/neopz/mumps \
+        -DMUMPS_USE_DOUBLE=ON \
+        $([ "${MUMPS_BUILD_SINGLE}"    = "1" ] && echo -DMUMPS_USE_SINGLE=ON    || echo -DMUMPS_USE_SINGLE=OFF) \
+        $([ "${MUMPS_BUILD_COMPLEX}"   = "1" ] && echo -DMUMPS_USE_COMPLEX=ON   || echo -DMUMPS_USE_COMPLEX=OFF) \
+        $([ "${MUMPS_BUILD_COMPLEX16}" = "1" ] && echo -DMUMPS_USE_COMPLEX16=ON || echo -DMUMPS_USE_COMPLEX16=OFF)"; \
     cmake -B build -G Ninja \
         -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
         -DCMAKE_INSTALL_PREFIX=/home/labmec/programming/neopz/neopz_install \
@@ -163,6 +174,7 @@ FROM debian:trixie-slim
 # ARGs must be re-declared in each stage that uses them
 ARG USING_LOG4CXX=1
 ARG USING_METIS=0
+ARG USING_MUMPS=0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -170,6 +182,7 @@ RUN set -e; \
     PKGS="build-essential cmake ninja-build git gdb valgrind python3"; \
     [ "${USING_LOG4CXX}" = "1" ] && PKGS="$PKGS liblog4cxx-dev"; \
     [ "${USING_METIS}"   = "1" ] && PKGS="$PKGS libmetis-dev"; \
+    [ "${USING_MUMPS}"   = "1" ] && PKGS="$PKGS libgfortran5 libopenblas0"; \
     apt-get update && apt-get install -y $PKGS && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash labmec
