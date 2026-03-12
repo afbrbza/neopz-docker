@@ -102,7 +102,33 @@ if ! $DOCKER_CMD info &>/dev/null 2>&1; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-# 2. Interactive configuration
+# 2. Check for existing images
+# ─────────────────────────────────────────────────────────────
+_EXISTING_IMAGES=()
+while IFS= read -r _img; do
+    [ -n "$_img" ] && _EXISTING_IMAGES+=("$_img")
+done < <($DOCKER_CMD images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
+    | grep "^neopz-dev:" || true)
+
+if [ ${#_EXISTING_IMAGES[@]} -gt 0 ]; then
+    section "Existing neopz-dev images"
+    for _img in "${_EXISTING_IMAGES[@]}"; do
+        _sz=$($DOCKER_CMD images --format "{{.Size}}" "$_img" 2>/dev/null)
+        _cr=$($DOCKER_CMD images --format "{{.CreatedSince}}" "$_img" 2>/dev/null)
+        echo "  • ${_img}  (${_sz}, ${_cr})"
+    done
+    echo ""
+    printf "  (b)uild a new image  /  (s)kip and use existing  [default: b]: "
+    read -r _build_ans
+    case "${_build_ans:-b}" in
+        s|S) info "Skipping build. Run ./run.sh to start a container."; exit 0 ;;
+        *) ;;
+    esac
+    echo ""
+fi
+
+# ─────────────────────────────────────────────────────────────
+# 3. Interactive configuration
 # ─────────────────────────────────────────────────────────────
 echo ""
 echo "============================================="
@@ -178,8 +204,20 @@ else
     prompt_yn "Enable Intel MKL / oneAPI (x86_64 only)" "n" USING_MKL
 fi
 
+# ── Image tag ─────────────────────────────────────────────────
+section "Image tag"
+echo "  The image will be tagged as  neopz-dev:<tag>"
+if [ ${#_EXISTING_IMAGES[@]} -gt 0 ]; then
+    echo "  Existing tags: ${_EXISTING_IMAGES[*]}"
+fi
+printf "  Tag (default: latest): "
+read -r IMAGE_TAG
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+IMAGE_FULL_NAME="${IMAGE_NAME}:${IMAGE_TAG}"
+info "Image will be tagged: ${IMAGE_FULL_NAME}"
+
 # ─────────────────────────────────────────────────────────────
-# 3. Resolve GitHub repositories
+# 4. Resolve GitHub repositories
 # ─────────────────────────────────────────────────────────────
 section "Resolving GitHub repositories"
 
@@ -218,6 +256,7 @@ fi
 flag_label() { [ "$1" = "1" ] && echo -e "${GREEN}ON${RESET}" || echo -e "${YELLOW}OFF${RESET}"; }
 echo ""
 echo "─────────────────────────────────────────────"
+echo "  IMAGE               : ${IMAGE_FULL_NAME}"
 echo "  BUILD_TYPE          : ${BUILD_TYPE}"
 echo "  BUILD_UNITTESTING   : $(flag_label $BUILD_UNITTESTING)"
 echo "  USING_LOG4CXX       : $(flag_label $USING_LOG4CXX)"
@@ -257,12 +296,12 @@ $DOCKER_CMD build --no-cache \
     --build-arg MUMPS_BUILD_COMPLEX16="$MUMPS_BUILD_COMPLEX16" \
     --build-arg NEOPZ_REPO="$NEOPZ_REPO" \
     --build-arg MUMPS_REPO="$MUMPS_REPO" \
-    -t "$IMAGE_NAME" \
+    -t "$IMAGE_FULL_NAME" \
     -f "${SCRIPT_DIR}/Dockerfile" \
     "${SCRIPT_DIR}"
 
 echo ""
-info "Image '${IMAGE_NAME}' built successfully."
+info "Image '${IMAGE_FULL_NAME}' built successfully."
 
 # ─────────────────────────────────────────────────────────────
 # 5. Optional: install VSCode extensions on the host

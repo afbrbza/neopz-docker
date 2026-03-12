@@ -7,7 +7,6 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="neopz-dev"
-CONTAINER_NAME="neopz-dev"
 WORKDIR_IN_CONTAINER="/home/labmec/programming/neopz/neopz_projects"
 NEOPZ_SRC_IN_CONTAINER="/home/labmec/programming/neopz/neopz"
 
@@ -44,13 +43,101 @@ if ! docker info &>/dev/null 2>&1; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-# 2. Build image if it doesn't exist
+# 2. Container and image selection
 # ─────────────────────────────────────────────────────────────
-if ! docker image inspect "$IMAGE_NAME" &>/dev/null 2>&1; then
-    warn "Image '${IMAGE_NAME}' not found. Running build.sh..."
+
+# ── Discover existing neopz containers ───────────────────────
+_NEOPZ_CTRS=()
+while IFS= read -r _line; do
+    [ -n "$_line" ] && _NEOPZ_CTRS+=("$_line")
+done < <(docker ps -a --format "{{.Names}}|{{.Status}}|{{.Image}}" 2>/dev/null \
+    | grep "|neopz-dev" || true)
+
+# ── Discover available neopz images ──────────────────────────
+_NEOPZ_IMGS=()
+while IFS= read -r _img; do
+    [ -n "$_img" ] && _NEOPZ_IMGS+=("$_img")
+done < <(docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
+    | grep "^neopz-dev:" || true)
+
+_ACTION="create"   # "create" | "use_existing"
+CONTAINER_NAME=""
+
+# ── If containers exist, offer to reuse one ──────────────────
+if [ ${#_NEOPZ_CTRS[@]} -gt 0 ]; then
+    section "Existing neopz-dev containers"
+    _i=1
+    for _c in "${_NEOPZ_CTRS[@]}"; do
+        _cname="${_c%%|*}"; _crest="${_c#*|}"; _cst="${_crest%%|*}"; _cimg="${_crest##*|}"
+        printf "  [%d] %-24s %-28s %s\n" "$_i" "$_cname" "(${_cst})" "$_cimg"
+        _i=$((_i + 1))
+    done
     echo ""
-    "${SCRIPT_DIR}/build.sh"
+    echo "  [n] Create a new container"
     echo ""
+    printf "  Choice (default: n): "
+    read -r _choice
+    _choice="${_choice:-n}"
+    if [[ "$_choice" =~ ^[0-9]+$ ]] && \
+       [ "$_choice" -ge 1 ] && [ "$_choice" -le "${#_NEOPZ_CTRS[@]}" ]; then
+        _sel="${_NEOPZ_CTRS[$((_choice - 1))]}"
+        CONTAINER_NAME="${_sel%%|*}"
+        _sel_rest="${_sel#*|}"; IMAGE_NAME="${_sel_rest##*|}"
+        _ACTION="use_existing"
+        info "Selected container: ${CONTAINER_NAME}  (image: ${IMAGE_NAME})"
+    fi
+fi
+
+# ── Create new container path ─────────────────────────────────
+if [ "$_ACTION" = "create" ]; then
+    # Ensure at least one image exists
+    if [ ${#_NEOPZ_IMGS[@]} -eq 0 ]; then
+        warn "No neopz-dev image found. Running build.sh..."
+        echo ""
+        "${SCRIPT_DIR}/build.sh"
+        echo ""
+        while IFS= read -r _img; do
+            [ -n "$_img" ] && _NEOPZ_IMGS+=("$_img")
+        done < <(docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
+            | grep "^neopz-dev:" || true)
+    fi
+
+    # Pick image (ask only when there are multiple)
+    if [ ${#_NEOPZ_IMGS[@]} -eq 1 ]; then
+        IMAGE_NAME="${_NEOPZ_IMGS[0]}"
+        info "Using image: ${IMAGE_NAME}"
+    elif [ ${#_NEOPZ_IMGS[@]} -gt 1 ]; then
+        section "Select image"
+        _i=1
+        for _img in "${_NEOPZ_IMGS[@]}"; do
+            _sz=$(docker images --format "{{.Size}}" "$_img" 2>/dev/null)
+            _cr=$(docker images --format "{{.CreatedSince}}" "$_img" 2>/dev/null)
+            printf "  [%d] %-32s %-12s %s\n" "$_i" "$_img" "$_sz" "$_cr"
+            _i=$((_i + 1))
+        done
+        printf "\n  Choice (default: 1): "
+        read -r _ic
+        _ic="${_ic:-1}"
+        if [[ "$_ic" =~ ^[0-9]+$ ]] && [ "$_ic" -ge 1 ] && [ "$_ic" -le "${#_NEOPZ_IMGS[@]}" ]; then
+            IMAGE_NAME="${_NEOPZ_IMGS[$((_ic - 1))]}"
+        else
+            IMAGE_NAME="${_NEOPZ_IMGS[0]}"
+        fi
+        info "Selected image: ${IMAGE_NAME}"
+    fi
+
+    # Pick a unique container name
+    _default_cname="neopz-dev"
+    if docker inspect "$_default_cname" &>/dev/null 2>&1; then
+        _n=2
+        while docker inspect "neopz-dev-${_n}" &>/dev/null 2>&1; do
+            _n=$((_n + 1))
+        done
+        _default_cname="neopz-dev-${_n}"
+    fi
+    printf "\n  Container name (default: %s): " "$_default_cname"
+    read -r CONTAINER_NAME
+    CONTAINER_NAME="${CONTAINER_NAME:-$_default_cname}"
 fi
 
 # ─────────────────────────────────────────────────────────────
@@ -293,36 +380,24 @@ fi
 
 
 # ─────────────────────────────────────────────────────────────
-# 5. Start container (detached)
+# 5. Start container
 # ─────────────────────────────────────────────────────────────
 _start_container() {
-    docker rm -f "$CONTAINER_NAME" &>/dev/null 2>&1 || true
-    docker run -d --rm \
+    docker run -d \
         --name "$CONTAINER_NAME" \
         -v "${PROJECTS_DIR}":${WORKDIR_IN_CONTAINER} \
         "$IMAGE_NAME" \
         sleep infinity
-    info "Container '${CONTAINER_NAME}' started with volume: ${PROJECTS_DIR}"
+    info "Container '${CONTAINER_NAME}' started (image: ${IMAGE_NAME}) with volume: ${PROJECTS_DIR}"
 }
 
-if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' \
-        | grep -q "^${CONTAINER_NAME}$"; then
-    CURRENT_VOLUME=$(docker inspect "$CONTAINER_NAME" \
-        --format '{{range .Mounts}}{{if eq .Destination "'"${WORKDIR_IN_CONTAINER}"'"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
-    if [ "$CURRENT_VOLUME" != "$PROJECTS_DIR" ]; then
-        warn "Container running with a different volume:"
-        warn "  current  : ${CURRENT_VOLUME}"
-        warn "  requested: ${PROJECTS_DIR}"
-        warn "Restarting container with the correct volume..."
-        docker stop "$CONTAINER_NAME" &>/dev/null 2>&1 || true
-        # Wait for --rm to fully remove the container before restarting
-        _i=0
-        while docker inspect "$CONTAINER_NAME" &>/dev/null 2>&1 && [ "$_i" -lt 15 ]; do
-            sleep 1; _i=$((_i + 1))
-        done
-        _start_container
-    else
+if [ "$_ACTION" = "use_existing" ]; then
+    _cst_raw=$(docker inspect "$CONTAINER_NAME" --format '{{.State.Status}}' 2>/dev/null)
+    if [ "$_cst_raw" = "running" ]; then
         warn "Container '${CONTAINER_NAME}' is already running."
+    else
+        docker start "$CONTAINER_NAME" &>/dev/null
+        info "Container '${CONTAINER_NAME}' started."
     fi
 else
     _start_container
@@ -336,8 +411,14 @@ echo ""
 echo "  Open a shell inside the container:"
 echo -e "    ${CYAN}docker exec -it ${CONTAINER_NAME} /bin/bash${RESET}"
 echo ""
-echo "  Stop the container (removed automatically on stop):"
+echo "  Stop the container (kept – can be restarted later):"
 echo -e "    ${CYAN}docker stop ${CONTAINER_NAME}${RESET}"
+echo ""
+echo "  Restart a stopped container:"
+echo -e "    ${CYAN}docker start ${CONTAINER_NAME}${RESET}"
+echo ""
+echo "  Remove the container permanently:"
+echo -e "    ${CYAN}docker rm ${CONTAINER_NAME}${RESET}"
 echo ""
 
 # ─────────────────────────────────────────────────────────────
