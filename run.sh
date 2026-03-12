@@ -16,12 +16,6 @@ warn()    { echo -e "${YELLOW}[!]${RESET} $*"; }
 section() { echo -e "\n${CYAN}▶ $*${RESET}"; }
 
 section "NeoPZ Docker development environment"
-# This directory will be mounted as the projects volume inside the container.
-PROJECTS_DIR="$HOME/programming"
-printf "  Projects volume – host directory to mount into the container\n"
-printf "  (default: %s): " "$PROJECTS_DIR"
-read -r PROJECTS_DIR
-PROJECTS_DIR="${PROJECTS_DIR:-$HOME/programming}"
 
 # ─────────────────────────────────────────────────────────────
 # 1. Ensure Docker is available and running
@@ -46,12 +40,21 @@ fi
 # 2. Container and image selection
 # ─────────────────────────────────────────────────────────────
 
-# ── Discover existing neopz containers ───────────────────────
-_NEOPZ_CTRS=()
-while IFS= read -r _line; do
-    [ -n "$_line" ] && _NEOPZ_CTRS+=("$_line")
-done < <(docker ps -a --format "{{.Names}}|{{.Status}}|{{.Image}}" 2>/dev/null \
-    | grep "|neopz-dev" || true)
+# ── Discover existing neopz containers whose volume still exists on the host ──
+_NEOPZ_CTRS=()       # entries: name|status|image|volume_source
+while IFS= read -r _cname; do
+    [ -z "$_cname" ] && continue
+    _cst=$(docker inspect "$_cname" --format '{{.State.Status}}' 2>/dev/null)
+    _cimg=$(docker inspect "$_cname" --format '{{.Config.Image}}' 2>/dev/null)
+    _cvol=$(docker inspect "$_cname" \
+        --format "{{range .Mounts}}{{if eq .Destination \"${WORKDIR_IN_CONTAINER}\"}}{{.Source}}{{end}}{{end}}" \
+        2>/dev/null)
+    # Only include if the volume source directory still exists on the host
+    if [ -n "$_cvol" ] && [ -d "$_cvol" ]; then
+        _NEOPZ_CTRS+=("${_cname}|${_cst}|${_cimg}|${_cvol}")
+    fi
+done < <(docker ps -a --format "{{.Names}}" 2>/dev/null \
+    | grep "^neopz-dev" || true)
 
 # ── Discover available neopz images ──────────────────────────
 _NEOPZ_IMGS=()
@@ -62,14 +65,16 @@ done < <(docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
 
 _ACTION="create"   # "create" | "use_existing"
 CONTAINER_NAME=""
+PROJECTS_DIR="$HOME/programming"   # default; overridden when reusing a container
 
-# ── If containers exist, offer to reuse one ──────────────────
+# ── If containers with valid volumes exist, offer to reuse one ──
 if [ ${#_NEOPZ_CTRS[@]} -gt 0 ]; then
     section "Existing neopz-dev containers"
     _i=1
     for _c in "${_NEOPZ_CTRS[@]}"; do
-        _cname="${_c%%|*}"; _crest="${_c#*|}"; _cst="${_crest%%|*}"; _cimg="${_crest##*|}"
-        printf "  [%d] %-24s %-28s %s\n" "$_i" "$_cname" "(${_cst})" "$_cimg"
+        IFS='|' read -r _cn _cst _cimg _cvol <<< "$_c"
+        printf "  [%d] %-24s %-16s %-28s %s\n" \
+            "$_i" "$_cn" "(${_cst})" "$_cimg" "$_cvol"
         _i=$((_i + 1))
     done
     echo ""
@@ -80,16 +85,21 @@ if [ ${#_NEOPZ_CTRS[@]} -gt 0 ]; then
     _choice="${_choice:-n}"
     if [[ "$_choice" =~ ^[0-9]+$ ]] && \
        [ "$_choice" -ge 1 ] && [ "$_choice" -le "${#_NEOPZ_CTRS[@]}" ]; then
-        _sel="${_NEOPZ_CTRS[$((_choice - 1))]}"
-        CONTAINER_NAME="${_sel%%|*}"
-        _sel_rest="${_sel#*|}"; IMAGE_NAME="${_sel_rest##*|}"
+        IFS='|' read -r CONTAINER_NAME _cst IMAGE_NAME PROJECTS_DIR \
+            <<< "${_NEOPZ_CTRS[$((_choice - 1))]}"
         _ACTION="use_existing"
-        info "Selected container: ${CONTAINER_NAME}  (image: ${IMAGE_NAME})"
+        info "Selected: ${CONTAINER_NAME}  image=${IMAGE_NAME}  volume=${PROJECTS_DIR}"
     fi
 fi
 
 # ── Create new container path ─────────────────────────────────
 if [ "$_ACTION" = "create" ]; then
+    # Ask for the projects volume
+    printf "\n  Projects volume – host directory to mount into the container\n"
+    printf "  (default: %s): " "$PROJECTS_DIR"
+    read -r _pd
+    PROJECTS_DIR="${_pd:-$PROJECTS_DIR}"
+
     # Ensure at least one image exists
     if [ ${#_NEOPZ_IMGS[@]} -eq 0 ]; then
         warn "No neopz-dev image found. Running build.sh..."
@@ -410,6 +420,9 @@ section "How to access the container"
 echo ""
 echo "  Open a shell inside the container:"
 echo -e "    ${CYAN}docker exec -it ${CONTAINER_NAME} /bin/bash${RESET}"
+echo ""
+echo "  If you need to install something and requires root privileges:"
+echo -e "    ${CYAN}docker exec -it -u root ${CONTAINER_NAME} /bin/bash${RESET}"
 echo ""
 echo "  Stop the container (kept – can be restarted later):"
 echo -e "    ${CYAN}docker stop ${CONTAINER_NAME}${RESET}"
