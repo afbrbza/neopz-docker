@@ -81,6 +81,8 @@ That is all. `run.sh` will open VS Code attached to the running container if `co
 
 The script guides you through an interactive configuration menu, then calls `docker build` with the chosen flags. If Docker is not installed, it will install it automatically (Linux via the official Docker APT repository; macOS via Homebrew).
 
+If any `neopz-dev:*` image already exists, the script lists them and asks whether you want to build a new one or skip. When building, you are asked for a **tag** (default: `latest`), so multiple variants can coexist as `neopz-dev:latest`, `neopz-dev:mumps`, `neopz-dev:release`, etc.
+
 ### Build Options
 
 | Option | Default | Description |
@@ -113,9 +115,12 @@ MUMPS supports four floating-point variants. The **double (`d`)** variant is alw
 
 This script:
 
-1. Checks that Docker is available and running (starts the daemon if needed).
-2. Builds the image automatically if it does not exist yet.
-3. Asks for the **projects directory** on your host (default: `~/programming`).
+1. Ensures Docker is available and running (starts the daemon if needed).
+2. Lists any existing `neopz-dev` containers whose host volume directory still exists — letting you **resume a previous container** without re-answering any questions.
+3. If you choose to create a new container:
+   - Asks for the **projects directory** on your host (default: `~/programming`).
+   - Lets you **select which image** to use when multiple `neopz-dev:*` tags are available.
+   - Suggests a unique container name (`neopz-dev`, `neopz-dev-2`, …).
 4. Optionally scaffolds a ready-to-compile **example project** (see below).
 5. Starts the container in **detached mode** with your projects directory mounted as a volume.
 6. Opens **VS Code** attached to the running container (if `code` is in your PATH).
@@ -164,7 +169,7 @@ To stop the container:
 docker stop neopz-dev
 ```
 
-The container is started with `--rm`, so it is removed automatically on stop. Your project files remain safe on the host.
+The container is kept after stopping and can be restarted by running `./run.sh` again (select it from the list) or directly with `docker start neopz-dev`. Your project files always remain safe on the host.
 
 ---
 
