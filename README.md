@@ -1,236 +1,152 @@
-# Neopz Docker
+# NeoPZ Docker Development Environment
 
-A Docker-based development environment for [NeoPZ](https://github.com/labmec/neopz) — a C++ finite element method (FEM) library developed by [LabMeC](https://labmec.github.io/) at Unicamp.
+A high-performance Docker image optimized for [NeoPZ](https://github.com/labmec/neopz) development, featuring **Intel MKL** and **PARDISO** support, with all dependencies pre-compiled in Debug mode.
 
-This repository provides a fully automated, reproducible setup: a single script builds a Docker image with NeoPZ compiled and installed, ready for you to develop, build, and debug your own FEM projects inside a container — with full VS Code integration.
+## 🎯 Features
 
----
+- **Pre-compiled in Debug**: NeoPZ compiled with debug symbols for easy stepping and debugging.
+- **Intel oneAPI MKL & PARDISO**: Industry-standard high-performance math libraries enabled by default.
+- **All features enabled**:
+  - ✅ **MKL/PARDISO** (Intel Math Kernel Library)
+  - ✅ **MUMPS** (all variants: d, s, c, z)
+  - ✅ **METIS** (mesh partitioner)
+  - ✅ **LOG4CXX** (logging)
+  - ✅ **LAPACK/BLAS** (via MKL)
+  - ✅ **Catch2** (unit testing)
+  - ✅ **Build tools** (CMake, Ninja, GCC)
+  - ✅ **Debug tools** (GDB, Valgrind)
+  - ✅ **VSCode extension defaults** (C++ Tools, CMake Tools via Dev Containers metadata)
 
-## Table of Contents
+- **Customizable**: Recompile NeoPZ inside the container with reduced features if needed.
+- **Clean layout**: Well-organized folder structure at `/home/labmec/`.
 
-- [Overview](#overview)
-- [Prerequisites](#prerequisites)
-- [Repository Structure](#repository-structure)
-- [Quick Start](#quick-start)
-- [Step 1 — Build the Image (`build.sh`)](#step-1--build-the-image-buildsh)
-  - [Build Options](#build-options)
-  - [MUMPS Numeric Variants](#mumps-numeric-variants)
-- [Step 2 — Run the Container (`run.sh`)](#step-2--run-the-container-runsh)
-  - [Volume Mapping](#volume-mapping)
-  - [Example Project](#example-project)
-  - [VS Code Integration](#vs-code-integration)
-- [Container Layout](#container-layout)
-- [Developing Your Own Project](#developing-your-own-project)
-- [VS Code Extensions](#vs-code-extensions)
-- [Dockerfile Architecture](#dockerfile-architecture)
-
----
-
-## Overview
-
-NeoPZ is a high-performance C++ library for the development of finite element simulations. Setting up its dependencies (CMake, optional solvers, logging libraries, Intel MKL) manually is tedious and error-prone across different operating systems.
-
-This project solves that by packaging NeoPZ and all its optional dependencies into a Docker image. You write your simulation code on your host machine; the container handles compilation and execution in a clean, controlled environment.
-
----
-
-## Prerequisites
-
-| Tool | Notes |
-|---|---|
-| **Docker** | Installed automatically by `build.sh` on Debian/Ubuntu and macOS (via Homebrew) |
-| **VS Code** *(optional)* | Required only for the VS Code integration features |
-| **Dev Containers extension** *(optional)* | VS Code extension `ms-vscode-remote.remote-containers` |
-
-> **Apple Silicon (M1/M2/M3):** Intel MKL is x86_64-only and will be automatically disabled. All other features work normally.
-
----
-
-## Repository Structure
+## 📦 Container Layout
 
 ```
-neopz-docker/
-├── Dockerfile                  # Multi-stage image definition
-├── build.sh                    # Interactive image build script
-├── run.sh                      # Container startup and project scaffold script
-└── install_vscode_extensions.sh # Installs recommended host-side VS Code extensions
+/home/labmec/
+├── neopz/                ← NeoPZ source code (IDE, debugging)
+├── neopz_install/        ← Compiled headers and libraries
+├── mumps/                ← Pre-compiled MUMPS libraries (linked to MKL)
+└── <workspace>/          ← Your projects (volume mount)
 ```
 
----
+## 🚀 Quick Start
 
-## Quick Start
+### 1. Build the Image
 
 ```bash
-# 1. Build the Docker image (interactive – you will be asked about optional features)
 ./build.sh
-
-# 2. Start the container and (optionally) create an example project
-./run.sh
 ```
 
-That is all. `run.sh` will open VS Code attached to the running container if `code` is in your PATH.
+- Installs Docker if missing (Linux).
+- Configures Intel oneAPI repositories.
+- Compiles MUMPS and NeoPZ against MKL.
 
----
+### 2. Create and Run Container
 
-## Step 1 — Build the Image (`build.sh`)
-
-```bash
-./build.sh          # Build the image only
-./build.sh vscode   # Build the image and also install the host-side VS Code extensions
-```
-
-The script guides you through an interactive configuration menu, then calls `docker build` with the chosen flags. If Docker is not installed, it will install it automatically (Linux via the official Docker APT repository; macOS via Homebrew).
-
-If any `neopz-dev:*` image already exists, the script lists them and asks whether you want to build a new one or skip. When building, you are asked for a **tag** (default: `latest`), so multiple variants can coexist as `neopz-dev:latest`, `neopz-dev:mumps`, `neopz-dev:release`, etc.
-
-### Build Options
-
-| Option | Default | Description |
-|---|---|---|
-| `BUILD_TYPE` | `Debug` | **`Debug`**: includes debug symbols, no optimization — ideal for development and stepping through code in a debugger. **`Release`**: full compiler optimizations, smaller binary — use for production runs. |
-| `BUILD_UNITTESTING` | `OFF` | Compiles the NeoPZ unit test suite using the [Catch2](https://github.com/catchorg/Catch2) framework. Enable this if you want to verify the NeoPZ build itself. |
-| `USING_LOG4CXX` | `ON` | Enables the [Apache Log4cxx](https://logging.apache.org/log4cxx/) logging library inside NeoPZ. Provides structured, levelled log output for simulation diagnostics. |
-| `USING_MUMPS` | `OFF` | Enables the [MUMPS](https://mumps-solver.org/) multifrontal sparse direct solver. Required for large, ill-conditioned, or saddle-point linear systems that iterative solvers struggle with. |
-| `USING_MKL` | `OFF` | Links NeoPZ against [Intel oneAPI MKL](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html) for optimised BLAS/LAPACK routines. Significant performance gain on Intel CPUs. x86_64 only. |
-| `USING_METIS` | `OFF` | Enables the [METIS](http://glaros.dtc.umn.edu/gkhome/metis/metis/overview) graph partitioner for mesh partitioning and reordering. Works independently of other options. When both METIS and MUMPS are enabled, MUMPS is also compiled with METIS support automatically. |
-
-### MUMPS Numeric Variants
-
-MUMPS supports four floating-point variants. The **double (`d`)** variant is always compiled when MUMPS is enabled. You may additionally select:
-
-| Code | Variant | Use case |
-|---|---|---|
-| `s` | `smumps` — real single precision | Reduced memory footprint |
-| `c` | `cmumps` — complex single precision | Complex-valued PDEs (low precision) |
-| `z` | `zmumps` — complex double precision | Complex-valued PDEs (high precision) |
-| `all` | All four variants | |
-
----
-
-## Step 2 — Run the Container (`run.sh`)
-
+#### **Linux**
 ```bash
 ./run.sh
 ```
 
-This script:
+#### **macOS / Windows (Docker Desktop)**
+```bash
+./run.sh
+```
 
-1. Ensures Docker is available and running (starts the daemon if needed).
-2. Lists any existing `neopz-dev` containers whose host volume directory still exists — letting you **resume a previous container** without re-answering any questions.
-3. If you choose to create a new container:
-   - Asks for the **projects directory** on your host (default: `~/programming`).
-   - Lets you **select which image** to use when multiple `neopz-dev:*` tags are available.
-   - Suggests a unique container name (`neopz-dev`, `neopz-dev-2`, …).
-4. Optionally scaffolds a ready-to-compile **example project** (see below).
-5. Starts the container in **detached mode** with your projects directory mounted as a volume.
-6. Opens **VS Code** attached to the running container (if `code` is in your PATH).
+The script offers:
+- Reuse existing container or create new.
+- Interactive volume mounting of your project.
+- Automatic VSCode attachment (Linux/macOS with VSCode installed).
 
-### Volume Mapping
+**Note**: On macOS with Apple Silicon (M1/M2/M3), the image runs in **x86_64 emulation mode** via Docker's `--platform=linux/amd64` flag. This is necessary because:
+- The base image is Debian AMD64 (Intel/x86_64 architecture)
+- Intel MKL and PARDISO libraries are x86_64 only
+- Performance impact is minimal for development workflows
 
-| Host path | Container path | Purpose |
-|---|---|---|
-| `<projects_dir>` (you choose) | `/home/labmec/programming/neopz/neopz_projects` | Your source code, live-synced between host and container |
+## 🛠️ How to Use
 
-Everything else inside the container (NeoPZ headers, libraries, source, optional solvers) is baked into the image and is read-only from your perspective.
+### Platform Compatibility
 
-### Example Project
+#### Linux (x86_64)
+- ✅ **Fully supported**: Native performance
+- Builds and runs without any platform flags
 
-If you choose to create an example project, `run.sh` generates a complete, compilable project with:
+#### macOS (Intel)
+- ✅ **Fully supported**: Native performance with Docker Desktop
+- Runs container with `--platform=linux/amd64` (automatic, no action needed)
 
-- **`CMakeLists.txt`** — finds and links against the installed NeoPZ package.
-- **`main.cpp`** — a Darcy flow simulation on a 2D quadrilateral mesh, producing VTK output.
-- **`<name>.code-workspace`** — a VS Code multi-root workspace that opens both your project folder and the NeoPZ source tree (for IDE navigation and debugger source stepping).
+#### macOS (Apple Silicon - M1/M2/M3)
+- ✅ **Supported with x86_64 emulation**: Docker Desktop handles architecture translation
+- Performance impact: Minimal for typical development workflows
+- Container runs in emulated x86_64 environment (required for MKL/PARDISO)
+- If you need native ARM64 builds, you'll need to recompile inside the container after removing MKL (see "Recompiling without MKL" below)
 
-To compile and run it inside the container:
+#### Windows (WSL2 / Docker Desktop)
+- ✅ **Supported**: Docker Desktop with WSL2 backend
+- Use `./run.sh` via WSL terminal, or Docker Desktop GUI for container management
+
+### Compiling your project with MKL
+
+The container automatically loads MKL environment variables in `.bashrc`. To compile a project:
 
 ```bash
-# Open a shell in the running container
+mkdir build && cd build
+cmake .. -DNeoPZ_DIR=/home/labmec/neopz_install -DUSING_MKL=ON
+cmake --build .
+```
+
+### Using PARDISO in NeoPZ
+
+In your code, you can now use the PARDISO solver provided by MKL:
+
+```cpp
+#include "TPZLinearAnalysis.h"
+#include "TPZSSpStructMatrix.h"
+#include "TPZStepSolver.h"
+
+// ... inside your analysis setup
+TPZSSpStructMatrix<STATE> strmat(cmesh);
+strmat.SetNumThreads(8);
+analysis.SetStructMatrix(strmat);
+
+TPZStepSolver<STATE> step;
+step.SetDirect(ELDLT); // PARDISO will be used if NeoPZ was built with USING_MKL=ON
+analysis.SetSolver(step);
+```
+
+### Recompiling NeoPZ without MKL (ARM64 native on Apple Silicon)
+
+If you're on Apple Silicon and need native ARM64 performance instead of emulation:
+
+```bash
+# Inside the container
+cd /home/labmec/neopz
+rm -rf build neopz_install
+mkdir build && cd build
+
+# Rebuild with OpenBLAS instead of MKL
+cmake .. \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_INSTALL_PREFIX=/home/labmec/neopz_install_arm64 \
+    -DUSING_LOG4CXX=ON \
+    -DUSING_METIS=ON \
+    -DUSING_MUMPS=ON \
+    -DUSING_MKL=OFF \
+    -DLAPACK_VENDOR=OpenBLAS
+
+cmake --build .
+cmake --install .
+```
+
+## 🔧 Maintenance
+
+### Accessing the Container
+
+```bash
+# Standard shell
 docker exec -it neopz-dev /bin/bash
 
-# Navigate to your project and build it
-cd /home/labmec/programming/neopz/neopz_projects/firsttest
-cmake -B build -G Ninja -DNeoPZ_DIR=$NeoPZ_DIR
-cmake --build build
-./build/firsttest
+# Root access (to install extra packages)
+docker exec -it -u root neopz-dev /bin/bash
 ```
-
-### VS Code Integration
-
-When `run.sh` finishes, VS Code opens directly attached to the container via the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension. All editing, building, debugging, and IntelliSense happen inside the container — no local C++ toolchain required.
-
-The generated `.code-workspace` file adds the NeoPZ source tree as a second root folder, enabling:
-- Full symbol navigation across NeoPZ headers and implementation files.
-- Source-level stepping into NeoPZ code with GDB.
-- `clangd`/IntelliSense powered by the `compile_commands.json` generated during the NeoPZ build.
-
-To stop the container:
-
-```bash
-docker stop neopz-dev
-```
-
-The container is kept after stopping and can be restarted by running `./run.sh` again (select it from the list) or directly with `docker start neopz-dev`. Your project files always remain safe on the host.
-
----
-
-## Container Layout
-
-```
-/home/labmec/programming/neopz/
-├── neopz/               ← NeoPZ source tree (headers + compile_commands.json, no build artifacts)
-├── neopz_install/       ← Installed NeoPZ headers and compiled libraries
-├── mumps/               ← MUMPS install (present only when built with USING_MUMPS=1)
-└── neopz_projects/      ← Volume mount — your project source code lives here
-```
-
-The environment variable `NeoPZ_DIR` is pre-set to `/home/labmec/programming/neopz/neopz_install` inside the container, so CMake's `find_package(NeoPZ REQUIRED)` works without any extra flags.
-
----
-
-## Developing Your Own Project
-
-Any project inside `neopz_projects/` follows this minimal CMake template:
-
-```cmake
-cmake_minimum_required(VERSION 3.14)
-project(MySimulation)
-
-find_package(NeoPZ REQUIRED HINTS $ENV{NeoPZ_DIR})
-
-add_executable(MySimulation main.cpp)
-target_link_libraries(MySimulation NeoPZ::pz)
-```
-
-Build it inside the container:
-
-```bash
-cmake -B build -G Ninja
-cmake --build build
-```
-
----
-
-## VS Code Extensions
-
-Running `./build.sh vscode` (or calling `install_vscode_extensions.sh` directly) installs the following extensions on the **host**:
-
-| Extension | Purpose |
-|---|---|
-| `ms-vscode.cpptools` | C/C++ language support, IntelliSense, and debugging |
-| `ms-vscode.cmake-tools` | CMake project integration, configure/build from the VS Code UI |
-
-The **Dev Containers** extension (`ms-vscode-remote.remote-containers`) must be installed separately from the VS Code Marketplace to use the container-attach workflow.
-
----
-
-## Dockerfile Architecture
-
-The image is built in three stages to keep the final image lean:
-
-| Stage | Base | Purpose |
-|---|---|---|
-| `builder-mumps` | `debian:trixie-slim` | Clones and compiles MUMPS from source. Produces an empty directory when `USING_MUMPS=0`, so downstream stages are always valid. |
-| `builder` | `debian:trixie-slim` | Installs the build toolchain, optional packages (Log4cxx, METIS, MKL), copies MUMPS artifacts, clones NeoPZ, and runs the CMake configure + build + install cycle. Strips build artifacts from the source tree before export. |
-| *(final)* | `debian:trixie-slim` | Copies only the installed NeoPZ files, the stripped source tree, MUMPS libs, and MKL runtime libs from the builder stages. Registers shared libraries with `ldconfig`. Creates the `labmec` user and sets the working directory. |
-
-This multi-stage approach ensures that compilers, intermediate object files, and build caches are never present in the shipped image.
