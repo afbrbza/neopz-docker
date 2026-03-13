@@ -41,6 +41,7 @@ A high-performance Docker image optimized for [NeoPZ](https://github.com/labmec/
 - Installs Docker if missing (Linux).
 - Configures Intel oneAPI repositories.
 - Compiles MUMPS and NeoPZ against MKL.
+- **On all platforms**: Uses `--platform=linux/amd64` for consistent x86_64 builds (required for MKL/PARDISO).
 
 ### 2. Create and Run Container
 
