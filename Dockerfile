@@ -29,7 +29,7 @@
 #   BUILD_COMPLEX=on  → cmumps (c - complex float)     always ON (new)
 #   BUILD_COMPLEX16=on→ zmumps (z - complex double)    always ON (new)
 # =============================================================
-FROM debian:trixie-slim AS builder-mumps
+FROM --platform=linux/amd64 debian:trixie-slim AS builder-mumps
 
 ARG USING_METIS=1
 ARG MUMPS_REPO=https://github.com/giavancini/mumps.git
@@ -78,7 +78,7 @@ RUN source /opt/intel/oneapi/setvars.sh && \
 # =============================================================
 # Stage 2 – NeoPZ builder (always Debug, all features enabled)
 # =============================================================
-FROM debian:trixie-slim AS builder
+FROM --platform=linux/amd64 debian:trixie-slim AS builder
 
 ARG NEOPZ_REPO=https://github.com/labmec/neopz.git
 
@@ -148,10 +148,7 @@ RUN cp build/compile_commands.json /home/labmec/neopz/ 2>/dev/null || true && \
     rm -rf /home/labmec/neopz/build
 
 
-# =============================================================
-# Stage 3 – Runtime image
-# =============================================================
-FROM debian:trixie-slim
+FROM --platform=linux/amd64 debian:trixie-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
