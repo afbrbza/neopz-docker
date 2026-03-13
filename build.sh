@@ -172,8 +172,8 @@ echo "    • VSCode extension defaults (C++ Tools, CMake Tools)"
 echo ""
 
 if [ "$OS" = "Darwin" ]; then
-    warn "Building on macOS: Using OpenBLAS as LAPACK backend (alternative to Accelerate framework)"
-    warn "You can recompile inside the container to remove unwanted features"
+    warn "Building on macOS: Using Intel MKL (x86_64 architecture)"
+    warn "Apple Silicon users: Container will run in x86_64 emulation mode"
 fi
 
 echo ""
