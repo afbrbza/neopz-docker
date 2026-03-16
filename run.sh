@@ -170,7 +170,6 @@ if [ "$_ACTION" = "use_existing" ]; then
     fi
 else
     docker run -d \
-        --platform=linux/amd64 \
         --name "$CONTAINER_NAME" \
         -v "${PROJECTS_DIR}:${PROJECT_MOUNT_PATH}" \
         "$IMAGE_NAME" \
