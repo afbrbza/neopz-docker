@@ -22,7 +22,7 @@ if [ "$OS" != "Linux" ]; then
     warn "This script is optimized for Linux."
     warn "On macOS/Windows, use Docker Desktop to manage containers."
     echo ""
-    printf "  Continue anyway? (y/N): "
+    printf "  Continue anyway? (Y/n): "
     read -r _continue
     case "$_continue" in y|Y) ;; *) exit 0 ;; esac
 fi
@@ -194,26 +194,11 @@ echo -e "    ${CYAN}docker rm ${CONTAINER_NAME}${RESET}"
 echo ""
 
 # ─────────────────────────────────────────────────────────────
-# 6. Open VScode if available and container is running
+# 6. VSCode notification (if available)
 # ─────────────────────────────────────────────────────────────
 if command -v code &>/dev/null; then
-    if ! docker ps --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
-        warn "Container '${CONTAINER_NAME}' is not running. Start it to open in VSCode."
-        exit 0
-    else
-        WORKDIR_IN_CONTAINER=$(docker inspect --format '{{(index .Mounts 0).Destination}}' "$CONTAINER_NAME")
-
-        section "VSCode"
-        CONTAINER_HEX=$(printf '%s' "{\"containerName\":\"/${CONTAINER_NAME}\"}" \
-            | od -v -A n -t x1 | tr -d ' \n')
-        FULL_URI="vscode-remote://attached-container+${CONTAINER_HEX}${WORKDIR_IN_CONTAINER}/${VSCODE_OPEN_PROJECT}"
-        echo "  Opening project folder in VSCode (attached to container)..."
-        echo -e "    ${CYAN}${WORKDIR_IN_CONTAINER}/${VSCODE_OPEN_PROJECT}${RESET}"
-        code --folder-uri "$FULL_URI"
-        info "VSCode launched. Install the 'Dev Containers' extension if prompted."
-    fi
-else
-    warn "VSCode not found. Open the project folder in VSCode and use Remote Containers extension to attach to '${CONTAINER_NAME}'."
+    section "VSCode"
+    info "VSCode is available. Open it to attach to '${CONTAINER_NAME}' with Dev Containers."
 fi
 
 echo ""
