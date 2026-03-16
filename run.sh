@@ -148,10 +148,7 @@ if [ "$_ACTION" = "create" ]; then
 
     mkdir -p "$PROJECTS_DIR"
 
-    _default_project_name="$(basename "$PROJECTS_DIR")"
-    printf "  Container project folder name (default: %s): " "$_default_project_name"
-    read -r _pn
-    PROJECT_MOUNT_NAME="${_pn:-$_default_project_name}"
+    PROJECT_MOUNT_NAME="$(basename "$PROJECTS_DIR")"
     PROJECT_MOUNT_PATH="/home/labmec/${PROJECT_MOUNT_NAME}"
 fi
 
