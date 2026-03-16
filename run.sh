@@ -24,7 +24,7 @@ if [ "$OS" != "Linux" ]; then
     echo ""
     printf "  Continue anyway? (Y/n): "
     read -r _continue
-    case "$_continue" in y|Y) ;; *) exit 0 ;; esac
+    case "$_continue" in n|N) exit 0 ;; *) ;; esac
 fi
 
 # ─────────────────────────────────────────────────────────────
