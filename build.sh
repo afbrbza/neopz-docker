@@ -124,24 +124,24 @@ done
 
 ####################################################################
 # scivision updated their mumps-superbuild repo more recently solving RPATH issues. Now use it as the default MUMPS source.
-MUMPS_REPO="https://github.com/scivision/mumps-superbuild.git"
-info "MUMPS repository  : ${MUMPS_REPO}"
+# MUMPS_REPO="https://github.com/scivision/mumps-superbuild.git"
+# info "MUMPS repository  : ${MUMPS_REPO}"
 ####################################################################
 # ── MUMPS: afbrbza → labmec → giavancini ─────────────────────
-# MUMPS_REPO=""
-# for _owner in afbrbza labmec giavancini; do
-#     if github_repo_exists "$_owner" "mumps"; then
-#         MUMPS_REPO="https://github.com/${_owner}/mumps.git"
-#         info "MUMPS repository  : ${MUMPS_REPO}"
-#         break
-#     else
-#         warn "Not found: ${_owner}/mumps"
-#     fi
-# done
-# if [ -z "$MUMPS_REPO" ]; then
-#     MUMPS_REPO="https://github.com/scivision/mumps-superbuild.git"
-#     warn "MUMPS repository (fallback): ${MUMPS_REPO}"
-# fi
+MUMPS_REPO=""
+for _owner in afbrbza labmec giavancini; do
+    if github_repo_exists "$_owner" "mumps"; then
+        MUMPS_REPO="https://github.com/${_owner}/mumps.git"
+        info "MUMPS repository  : ${MUMPS_REPO}"
+        break
+    else
+        warn "Not found: ${_owner}/mumps"
+    fi
+done
+if [ -z "$MUMPS_REPO" ]; then
+    MUMPS_REPO="https://github.com/scivision/mumps-superbuild.git"
+    warn "MUMPS repository (fallback): ${MUMPS_REPO}"
+fi
 ####################################################################
 
 # ─────────────────────────────────────────────────────────────
