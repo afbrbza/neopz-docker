@@ -56,6 +56,7 @@ RUN source /opt/intel/oneapi/setvars.sh && \
         && rm -rf /var/lib/apt/lists/* && \
     git clone --depth=1 "${MUMPS_REPO}" /tmp/mumps-src && \
     cmake -S /tmp/mumps-src -B /tmp/mumps-src/build \
+        -DMUMPS_ENABLE_RPATH=on \
         -DBUILD_SINGLE=on \
         -DBUILD_DOUBLE=on \
         -DBUILD_COMPLEX=on \

@@ -122,21 +122,27 @@ for _owner in afbrbza labmec; do
 done
 [ -z "$NEOPZ_REPO" ] && error "NeoPZ repository not found in afbrbza/neopz or labmec/neopz."
 
+####################################################################
+# scivision updated their mumps-superbuild repo more recently solving RPATH issues. Now use it as the default MUMPS source.
+MUMPS_REPO="https://github.com/scivision/mumps-superbuild.git"
+info "MUMPS repository  : ${MUMPS_REPO}"
+####################################################################
 # ── MUMPS: afbrbza → labmec → giavancini ─────────────────────
-MUMPS_REPO=""
-for _owner in afbrbza labmec giavancini; do
-    if github_repo_exists "$_owner" "mumps"; then
-        MUMPS_REPO="https://github.com/${_owner}/mumps.git"
-        info "MUMPS repository  : ${MUMPS_REPO}"
-        break
-    else
-        warn "Not found: ${_owner}/mumps"
-    fi
-done
-if [ -z "$MUMPS_REPO" ]; then
-    MUMPS_REPO="https://github.com/scivision/mumps-superbuild.git"
-    warn "MUMPS repository (fallback): ${MUMPS_REPO}"
-fi
+# MUMPS_REPO=""
+# for _owner in afbrbza labmec giavancini; do
+#     if github_repo_exists "$_owner" "mumps"; then
+#         MUMPS_REPO="https://github.com/${_owner}/mumps.git"
+#         info "MUMPS repository  : ${MUMPS_REPO}"
+#         break
+#     else
+#         warn "Not found: ${_owner}/mumps"
+#     fi
+# done
+# if [ -z "$MUMPS_REPO" ]; then
+#     MUMPS_REPO="https://github.com/scivision/mumps-superbuild.git"
+#     warn "MUMPS repository (fallback): ${MUMPS_REPO}"
+# fi
+####################################################################
 
 # ─────────────────────────────────────────────────────────────
 # 3. Image tag
@@ -171,9 +177,11 @@ echo "    • OpenBLAS (LAPACK backend)"
 echo "    • VSCode extension defaults (C++ Tools, CMake Tools)"
 echo ""
 
+_platform_linux_amd_on_build=""
 if [ "$OS" = "Darwin" ]; then
     warn "Building on macOS: Using Intel MKL (x86_64 architecture)"
     warn "Apple Silicon users: Container will run in x86_64 emulation mode"
+    _platform_linux_amd_on_build="--platform=linux/amd64"
 fi
 
 echo ""
@@ -190,6 +198,7 @@ echo "Building image '${IMAGE_FULL_NAME}'..."
 echo ""
 
 $DOCKER_CMD build $([ "$nocache" = true ] && echo "--no-cache") \
+    $_platform_linux_amd_on_build \
     --build-arg NEOPZ_REPO="$NEOPZ_REPO" \
     --build-arg MUMPS_REPO="$MUMPS_REPO" \
     -t "$IMAGE_FULL_NAME" \
